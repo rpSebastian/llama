@@ -109,39 +109,43 @@ class Llama:
         logprobs: bool = False,
         echo: bool = False,
     ) -> Tuple[List[List[int]], Optional[List[List[float]]]]:
-        params = self.model.params
-        bsz = len(prompt_tokens)
+        params = self.model.params #模型参数
+        bsz = len(prompt_tokens)   #提示token的组数
         assert bsz <= params.max_batch_size, (bsz, params.max_batch_size)
 
-        min_prompt_len = min(len(t) for t in prompt_tokens)
-        max_prompt_len = max(len(t) for t in prompt_tokens)
+        min_prompt_len = min(len(t) for t in prompt_tokens) # 提示句子中最短的提示长度
+        max_prompt_len = max(len(t) for t in prompt_tokens) # 提示句子中最长的提示长度
         assert max_prompt_len <= params.max_seq_len
-        total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
+        total_len = min(params.max_seq_len, max_gen_len + max_prompt_len) #最终要生成字总长度
 
-        pad_id = self.tokenizer.pad_id
+        pad_id = self.tokenizer.pad_id #填充字
+        # 生成一个shape 为(提示token的组数,total_len) 初始字符为pad_id的tokens
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
         for k, t in enumerate(prompt_tokens):
-            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+            tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda") # 挨个取出prompt中的每个句子 放到tokens中
         if logprobs:
-            token_logprobs = torch.zeros_like(tokens, dtype=torch.float)
+            token_logprobs = torch.zeros_like(tokens, dtype=torch.float)  # 定义一个跟tokens尺寸一致的概率token_logprobs
 
         prev_pos = 0
-        eos_reached = torch.tensor([False] * bsz, device="cuda")
-        input_text_mask = tokens != pad_id
+        eos_reached = torch.tensor([False] * bsz, device="cuda") # 用于判断prompt中的每个句子是否已经处理完成
+        input_text_mask = tokens != pad_id #mask 标记那些不是填充字的地方
         for cur_pos in range(min_prompt_len, total_len):
-            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
+            logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos) # 以每个句子中的[prev_pos:cur_pos]部分作为输入去推理
             if logprobs:
+                # 如果开启了计算概率，就会把当前输出的序列logits，与原始提示中的序列右移一位之后
                 token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, 2),
-                    target=tokens[:, prev_pos + 1 : cur_pos + 1],
+                    target=tokens[:, prev_pos + 1 : cur_pos + 1], #shape=(bst,cur_pos-prev_pos)
                     reduction="none",
-                    ignore_index=pad_id,
+                    ignore_index=pad_id, #这里需要注意一下，ignore_index参数的作用是忽略target中为pad_id所对应的logits分量
+                                        #也就说当target右移到了pad_id，那么他与logits计算的loss不对整体loss产生影响，也就是你预测的是啥就是啥
+                                        #target也不知道正确答案了
                 )
             if temperature > 0:
-                probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
-                next_token = sample_top_p(probs, top_p)
+                probs = torch.softmax(logits[:, -1] / temperature, dim=-1) #带温度系数的softmax
+                next_token = sample_top_p(probs, top_p) #按sample_top_p的方式取next_token
             else:
-                next_token = torch.argmax(logits[:, -1], dim=-1)
+                next_token = torch.argmax(logits[:, -1], dim=-1) #之间取概率最大的next_token
 
             next_token = next_token.reshape(-1)
             # only replace token if prompt has already been generated
@@ -284,11 +288,13 @@ class Llama:
 
 
 def sample_top_p(probs, p):
-    probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True)
-    probs_sum = torch.cumsum(probs_sort, dim=-1)
-    mask = probs_sum - probs_sort > p
-    probs_sort[mask] = 0.0
-    probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True))
-    next_token = torch.multinomial(probs_sort, num_samples=1)
-    next_token = torch.gather(probs_idx, -1, next_token)
+    #从给定的概率分布中采样一个token，采样的方式是先对概率进行排序，然后计算累积概率，
+    #然后选择累积概率小于p的部分，最后在这部分中随机选择一个token。
+    probs_sort, probs_idx = torch.sort(probs, dim=-1, descending=True) #给定的概率降序排序
+    probs_sum = torch.cumsum(probs_sort, dim=-1) #从第一个元素开始，依次将序列中的每个元素与前面所有元素的和相加得到的
+    mask = probs_sum - probs_sort > p 
+    probs_sort[mask] = 0.0 #将累计和减去当前值>p的地方全部置0,留下来的就是概率较大的
+    probs_sort.div_(probs_sort.sum(dim=-1, keepdim=True)) #归一化下
+    next_token = torch.multinomial(probs_sort, num_samples=1) # 从归一化之后的样本抽取一个样本
+    next_token = torch.gather(probs_idx, -1, next_token) #从原始probs_idx找到next_token所对应的index
     return next_token

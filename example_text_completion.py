@@ -15,13 +15,14 @@ def main(
     max_gen_len: int = 64,
     max_batch_size: int = 4,
 ):
+    # 生成一个Llama模型实例
     generator = Llama.build(
         ckpt_dir=ckpt_dir,
         tokenizer_path=tokenizer_path,
         max_seq_len=max_seq_len,
         max_batch_size=max_batch_size,
     )
-
+    # 提示词
     prompts = [
         # For these prompts, the expected answer is the natural continuation of the prompt
         "I believe the meaning of life is",
@@ -39,6 +40,7 @@ def main(
         plush girafe => girafe peluche
         cheese =>""",
     ]
+    # 调用generator.text_completion方法
     results = generator.text_completion(
         prompts,
         max_gen_len=max_gen_len,
