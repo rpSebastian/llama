@@ -121,6 +121,8 @@ class Llama:
         pad_id = self.tokenizer.pad_id #填充字
         # 生成一个shape 为(提示token的组数,total_len) 初始字符为pad_id的tokens
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
+        
+        # 使用右补全
         for k, t in enumerate(prompt_tokens):
             tokens[k, : len(t)] = torch.tensor(t, dtype=torch.long, device="cuda") # 挨个取出prompt中的每个句子 放到tokens中
         if logprobs:
@@ -131,8 +133,9 @@ class Llama:
         input_text_mask = tokens != pad_id #mask 标记那些不是填充字的地方
         for cur_pos in range(min_prompt_len, total_len):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos) # 以每个句子中的[prev_pos:cur_pos]部分作为输入去推理
+            # [batch_size, cur_pos - prev_pos, vocab_size]
             if logprobs:
-                # 如果开启了计算概率，就会把当前输出的序列logits，与原始提示中的序列右移一位之后
+                # 如果开启了计算概率，就会把当前输出的序列logits，与原始提示中的序列右移一位之后，输出每个batch下预测下一个给定token的概率
                 token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, 2),
                     target=tokens[:, prev_pos + 1 : cur_pos + 1], #shape=(bst,cur_pos-prev_pos)
@@ -143,7 +146,7 @@ class Llama:
                 )
             if temperature > 0:
                 probs = torch.softmax(logits[:, -1] / temperature, dim=-1) #带温度系数的softmax
-                next_token = sample_top_p(probs, top_p) #按sample_top_p的方式取next_token
+                next_token = sample_top_p(probs, top_p) #按sample_top_p的方式取next_token，选取累积概率超过p的token，然后按照概率在这些token中采样
             else:
                 next_token = torch.argmax(logits[:, -1], dim=-1) #之间取概率最大的next_token
 
@@ -154,7 +157,7 @@ class Llama:
             )
             tokens[:, cur_pos] = next_token
             eos_reached |= (~input_text_mask[:, cur_pos]) & (
-                next_token == self.tokenizer.eos_id
+                next_token == self.tokenizer.eos_id  # 更新结束标志，当前
             )
             prev_pos = cur_pos
             if all(eos_reached):
@@ -166,7 +169,7 @@ class Llama:
         for i, toks in enumerate(tokens.tolist()):
             # cut to max gen len
             start = 0 if echo else len(prompt_tokens[i])
-            toks = toks[start : len(prompt_tokens[i]) + max_gen_len]
+            toks = toks[start : len(prompt_tokens[i]) + max_gen_len]  # batch生成的最大长度为 min(max_seq_len, 最长的句子加上max_gen_len)，对于不是batch中最长的句子，需要进行额外截断
             probs = None
             if logprobs:
                 probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
@@ -190,6 +193,7 @@ class Llama:
     ) -> List[CompletionPrediction]:
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
+        # 添加bos，不添加eos。eos为检测模型是否生成完毕的标识
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
