@@ -227,6 +227,7 @@ class Llama:
         prompt_tokens = []
         for dialog in dialogs:
             if dialog[0]["role"] == "system":
+                # 如果第一句的角色是系统，那么把第一句话和第二句话合并，并且在系统的前后用 B_SYS 和 E_SYS 包裹
                 dialog = [
                     {
                         "role": dialog[1]["role"],
@@ -242,6 +243,7 @@ class Llama:
                 "model only supports 'system', 'user' and 'assistant' roles, "
                 "starting with 'system', then 'user' and alternating (u/a/u/a/u...)"
             )
+            # 将对话历史按照 bos, B_INST user, E_INST assistance, eos 进行合并，使用sum连接得到一个列表
             dialog_tokens: List[int] = sum(
                 [
                     self.tokenizer.encode(
@@ -256,6 +258,7 @@ class Llama:
                 ],
                 [],
             )
+            # 最后再加上 bos B_INST user E_INST 
             assert (
                 dialog[-1]["role"] == "user"
             ), f"Last message must be from user, got {dialog[-1]['role']}"
