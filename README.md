@@ -71,8 +71,11 @@ The fine-tuned models were trained for dialogue applications. To get the expecte
 needs to be followed, including the `INST` and `<<SYS>>` tags, `BOS` and `EOS` tokens, and the whitespaces and breaklines in between (we recommend calling `strip()` on inputs to avoid double-spaces).
 
 BOS B_INST B_SYS {sys} E_SYS {user} E_INST {assis} EOS 
+
 BOS B_INST {user} E_INST {assis} EOS
+
 BOS B_INST {user} E_INST {assis} EOS
+
 BOS B_INST {user} E_INST 
 
 You can also deploy additional classifiers for filtering out inputs and outputs that are deemed unsafe. See the llama-recipes repo for [an example](https://github.com/facebookresearch/llama-recipes/blob/main/inference/inference.py) of how to add a safety checker to the inputs and outputs of your inference code.
