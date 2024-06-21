@@ -29,6 +29,8 @@ class Tokenizer:
         assert self.sp_model.vocab_size() == self.sp_model.get_piece_size()
 
     def encode(self, s: str, bos: bool, eos: bool) -> List[int]:
+        ''' 将文本编码为tokens（id），bos表示是否添加开始符id，eos表示是否添加结束符id
+        '''
         assert type(s) is str
         t = self.sp_model.encode(s)
         if bos:
@@ -38,4 +40,25 @@ class Tokenizer:
         return t
 
     def decode(self, t: List[int]) -> str:
+        ''' 将tokens (id)解码为文本
+        '''
         return self.sp_model.decode(t)
+
+
+if __name__ == "__main__":
+    tokenizer = Tokenizer("./tokenizer.model")
+    texts = [
+        "  Hello World! rpSebastian 徐航 is me ",
+        " ▁_start for i in range(x_▁_1): end",
+    ]
+    for text in texts:
+        tokens = tokenizer.encode(text, False, False)
+        pieces = tokenizer.sp_model.encode(text, out_type=str)
+        recover_text = tokenizer.decode(tokens)
+        print(text)
+        print(tokens)
+        print(pieces)
+        print(recover_text)
+
+        print()
+        
