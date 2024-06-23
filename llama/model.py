@@ -210,7 +210,7 @@ class Attention(nn.Module):
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)  # [batch, head, seqlen, all_seqlen]
         if mask is not None:
             #加入mask，使得前面的token在于后面的token计算attention时得分为0，mask掉
-            scores = scores + mask  # [batch, head, all_seqlen, all_seqlen]
+            scores = scores + mask  # [batch, head, seqlen, all_seqlen]
         scores = F.softmax(scores.float(), dim=-1).type_as(xq)  # [batch, head, seqlen, all_seqlen]
         output = torch.matmul(scores, values)  # [batch, head, seqlen, head_dim]
         output = output.transpose(1, 2).contiguous().view(bsz, seqlen, -1)  # [batch, seqlen, dim]
